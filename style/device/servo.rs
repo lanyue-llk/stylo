@@ -84,6 +84,8 @@ impl Default for ServoMediaFeaturePreferences {
 pub(super) struct ExtraDeviceData {
     /// The current media type used by de device.
     media_type: MediaType,
+    /// User preferred text scale exposed through CSS env().
+    preferred_text_scale: f32,
     /// The current viewport size, in CSS pixels.
     viewport_size: Size2D<f32, CSSPixel>,
     /// The current screen size, in device pixels.
@@ -148,6 +150,7 @@ impl Device {
             body_text_color: AtomicU32::new(AbsoluteColor::BLACK.to_nscolor()),
             extra: ExtraDeviceData {
                 media_type,
+                preferred_text_scale: 1.0,
                 viewport_size,
                 device_size,
                 device_pixel_ratio,
@@ -160,6 +163,17 @@ impl Device {
                 font_metrics_provider,
             },
         }
+    }
+
+    /// User preferred text scale exposed by `env(preferred-text-scale)`.
+    pub fn preferred_text_scale(&self) -> f32 {
+        self.extra.preferred_text_scale
+    }
+
+    /// Set the CSS environment text scale. The embedder must invalidate styles
+    /// that depend on environment variables when this value changes.
+    pub fn set_preferred_text_scale(&mut self, scale: f32) {
+        self.extra.preferred_text_scale = scale;
     }
 
     /// Returns the computed line-height for the font in a given computed values instance.
