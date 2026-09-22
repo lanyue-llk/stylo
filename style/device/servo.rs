@@ -173,6 +173,10 @@ impl Device {
     /// Set the CSS environment text scale. The embedder must invalidate styles
     /// that depend on environment variables when this value changes.
     pub fn set_preferred_text_scale(&mut self, scale: f32) {
+        assert!(
+            scale.is_finite() && scale > 0.0,
+            "preferred text scale must be finite and positive"
+        );
         self.extra.preferred_text_scale = scale;
     }
 
@@ -584,6 +588,70 @@ fn used_color_scheme_is_dark(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug)]
+    struct TestFontMetrics;
+
+    impl FontMetricsProvider for TestFontMetrics {
+        fn query_font_metrics(
+            &self,
+            _vertical: bool,
+            _font: &Font,
+            _base_size: CSSPixelLength,
+            _flags: QueryFontMetricsFlags,
+        ) -> FontMetrics {
+            FontMetrics::default()
+        }
+
+        fn base_size_for_generic(&self, _generic: GenericFontFamily) -> Length {
+            Length::new(16.0)
+        }
+    }
+
+    #[test]
+    fn preferred_text_scale_environment_tracks_device_and_rejects_invalid_values() {
+        let mut device = Device::new(
+            MediaType::screen(),
+            QuirksMode::NoQuirks,
+            euclid::size2(100.0, 100.0),
+            euclid::size2(100.0, 100.0),
+            Scale::new(1.0),
+            Box::new(TestFontMetrics),
+            ComputedValues::initial_values_with_font_override(Font::initial_values()),
+            PrefersColorScheme::Light,
+            PointerCapabilities::default(),
+            PointerCapabilities::default(),
+        );
+        let url_data = crate::stylesheets::UrlExtraData::from(
+            url::Url::parse("https://example.test/").unwrap(),
+        );
+        let text_scale = crate::Atom::from("preferred-text-scale");
+        let value = |device: &Device| {
+            device
+                .environment()
+                .get(&text_scale, device, &url_data)
+                .unwrap()
+                .css
+                .parse::<f32>()
+                .unwrap()
+        };
+        assert_eq!(value(&device), 1.0);
+        device.set_preferred_text_scale(1.5);
+        assert_eq!(value(&device), 1.5);
+        device.set_preferred_text_scale(2.0);
+        assert_eq!(value(&device), 2.0);
+        assert!(device
+            .environment()
+            .get(&crate::Atom::from("unknown"), &device, &url_data)
+            .is_none());
+        for invalid in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                device.set_preferred_text_scale(invalid);
+            }))
+            .is_err());
+            assert_eq!(value(&device), 2.0);
+        }
+    }
 
     #[test]
     fn used_color_scheme_honors_supported_schemes_and_user_preference() {
